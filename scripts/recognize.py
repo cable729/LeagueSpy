@@ -1,27 +1,7 @@
-# import tesseract
-
-# api = tesseract.TessBaseAPI()
-# api.Init(".","eng",tesseract.OEM_DEFAULT)
-# api.SetVariable("tessedit_char_whitelist", "0123456789")
-# api.SetPageSegMode(tesseract.PSM_AUTO)
-
-# mImgFile = "..\screens\scores\score0.png"
-# mBuffer=open(mImgFile,"rb").read()
-# result = tesseract.ProcessPagesBuffer(mBuffer,len(mBuffer),api)
-# print "result(ProcessPagesBuffer)=",result
-# api.End()
 import os
 import subprocess
 import tempfile
 import cv2
-from PIL import Image, ImageEnhance
-
-def pil_to_cv2(image):
-    # source http://stackoverflow.com/a/14140796/264675
-    pil_image = image.convert('RGB')
-    open_cv_image = numpy.array(pil_image)
-    # Convert RGB to BGR
-    return open_cv_image[:, :, ::-1].copy()
 
 def show_cv2_image(image):
     cv2.imshow('image', image)
@@ -38,21 +18,6 @@ def tesser_exe():
     else:
         raise NotImplementedError('You must first install tesseract from https://code.google.com/p/tesseract-ocr/downloads/detail?name=tesseract-ocr-setup-3.02.02.exe&can=2&q=')
 
-def load_image(number):
-    return Image.open('..\screens\scores\score' + str(number) + '.png')
-
-def load_image_thresh(number):
-    return load_image.point(lambda p: p > 170 and 255)
-
-def load_image_blur_thresh(number):
-    return load_image.filter(ImageFilter.GaussianBlur).point(lambda p: p > 170 and 255)
-
-def compare_methods():
-    for i in range(60):
-        text1 = text_from_image(load_image_thresh(i))
-        text2 = text_from_image(load_image_blur_thresh(i))
-        print(str(i) + ":\n\t" + text1 + "\n\t" + text2)
-
 def text_from_cv2_image(image):
     (handle, input_name) = tempfile.mkstemp()
     cv2.imwrite(input_name + '.png', image)
@@ -61,11 +26,15 @@ def text_from_cv2_image(image):
     return_code = subprocess.call([tesser_exe(), input_name + '.png', output_name, '-l', 'eng.matrx'], stderr=FNULL)
     return open(output_name + '.txt').read().rstrip('\n')    
 
-def thresh(img):
-    ret,thresh4 = cv2.threshold(img,127,255, cv2.THRESH_TOZERO)
-    return thresh4
+def binarize(img):
+    ret,thresh = cv2.threshold(img,127,255, cv2.THRESH_BINARY)
+    return thresh
 
-def compare():
+def get_cs(frame, index):
+    img = binarize(frame.get_cs_img(index))
+    return text_from_cv2_image(img)
+
+def compare(show_errors = False):
     actual = [
             [99,53,92,98,4,93,56,80,81,13],
             [326,107,313,313,12,324,130,331,280,52],
@@ -75,21 +44,32 @@ def compare():
             [167,123,261,253,29,197,105,296,267,6]
         ]
 
-    correct = 0
+    num_correct = 0
     num_screens = len(actual)
     for x in range(num_screens):
         screen = Frame('screens/screen' + str(x + 1) + '.png')
         for i in range(10):
             num = get_cs(screen, i)
-            is_correct = False if num == '' else int(num) == actual[x][i]
-            if not is_correct:
-                print '[' + str(x+1) + ',' + str(i) + ']', num, '\t(' + str(actual[x][i]) + ')'
-                show_cv2_image(thresh(screen._get_cs_img(i)))
+            if not is_int(num) or int(num) != actual[x][i]:
+                tabs = "\t\t" if len(num) <= 2 else "\t"
+                print "WRONG [Screen {0}, Player {1}] '{2}'{3}({4})".format(x + 1, i, num, tabs, actual[x][i])
+                if show_errors:
+                    show_cv2_image(binarize(screen.get_cs_img(i)))
             else:
-                correct += 1
+                num_correct += 1
 
-    print "Correct: " + str(correct) + "/" + str(num_screens*10) + "\t(" + str(correct/(num_screens*10.0)) + "%)"
+    print "Correct: {0}/{1}\t({2})".format(num_correct, num_screens * 10, 10.0 * num_correct / num_screens)
 
-def get_cs(frame, index):
-    img = thresh(frame._get_cs_img(index))
-    return text_from_cv2_image(img)
+def is_int(s):
+    try: 
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+def generate_cs_imgs():
+    for x in range(6):
+        frame = Frame('screens/screen' + str(x + 1) + '.png')
+        for i in range(10):
+            img = binarize(frame._get_cs_img(i))
+            cv2.imwrite('screens/cs/' + str(x * 10 + i) + ".png", img)
